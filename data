@@ -1,0 +1,50 @@
+🧩 DATA OPTIMIZATION STRATEGY
+1️⃣ Data Cleaning & Pre-processing
+
+Goal: Cut token load + improve embedding relevance.
+
+  | Sub-task                             | Description                                                                                              | Implementation idea                                                                                                      | Impact                                   |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| **a. Text Normalization**            | Remove `/n`, `\r`, HTML tags, special symbols, extra spaces.                                             | Use a pre-processing script (regex) before chunking: collapse multiple newlines, replace `•`, `–`, etc. with plain text. | ↓ token count 30–40%                     |
+| **b. Deduplication & Noise Removal** | Merge repeated sentences or marketing slogans across device pages.                                       | Apply fuzzy string matching / MinHash on text blocks before saving to JSON.                                              | Cleaner context, fewer irrelevant chunks |
+| **c. Content Simplification**        | Extract only business-useful fields (pricing, eligibility, features). Avoid dumping full marketing copy. | Maintain a field-level whitelist.                                                                                        | Reduces confusion in retrieval           |
+| **d. Text Structuring**              | Preserve logical boundaries — section titles → key points → lists.                                       | Use Markdown or JSON sections (`title`, `points[]`, `description`).                                                      | Enables better chunk-based retrieval     |
+| **e. Token Count Control**           | Keep chunks around 400–600 tokens. Avoid over-long text.                                                 | Estimate using tiktoken and split accordingly.                                                                           | Balanced recall vs cost                  |
+
+
+  2️⃣ Vectorization Improvements
+
+Goal: Generate cleaner, smaller, more representative embeddings.
+
+  | Sub-task                         | Description                                                                         | Implementation idea                                                           | Impact                                    |        |   |   |                                        |
+| -------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------- | ------ | - | - | -------------------------------------- |
+| **a. Re-embed Clean Data**       | After cleaning, re-embed all documents.                                             | Use current OpenAI/Azure embedding model (text-embedding-3-small or ada-002). | Higher vector accuracy                    |        |   |   |                                        |
+| **b. Metadata Enrichment**       | Add attributes (`category`, `plan_type`, `device_name`, etc.) to each vector entry. | Stored as Cosmos metadata fields.                                             | Enables domain-aware retrieval            |        |   |   |                                        |
+| **c. Normalized Embeddings**     | Ensure all vectors are normalized before storage.                                   | `vector = vector /                                                            |                                           | vector |   | ` | Improves cosine similarity consistency |
+| **d. Reduce Dimensional Noise**  | Remove non-informative fields before embedding (prices, IDs, etc.).                 | Apply filters in embedding loop.                                              | Less distraction for retrieval            |        |   |   |                                        |
+| **e. Batch Upload Optimization** | Upsert vectors in batches (~500–1 000) instead of single writes.                    | Reduces I/O and Cosmos overhead.                                              | Slight latency reduction at indexing time |        |   |   |                                        |
+
+
+  3️⃣ Retrieval Optimization
+
+Goal: Retrieve fewer, more precise documents.
+
+  | Sub-task                      | Description                                                               | Implementation idea                                            | Impact                      |
+| ----------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------- | --------------------------- |
+| **a. Limit Document Count**   | From 5 → **top 2 or 3** based on similarity threshold (≥ 0.8).            | Adjust query limit and score filter.                           | ↓ context size → faster LLM |
+| **b. Hybrid Search (manual)** | Add lightweight keyword match before vector search.                       | Simple TF-IDF or BM25 filter on titles.                        | +15–20 % relevance          |
+| **c. Attribute Filtering**    | Retrieve by matching `category` or `plan_type` first.                     | Cosmos query: `WHERE category="Devices"` before vector search. | Domain-specific precision   |
+| **d. Context Pruning**        | Post-retrieval, summarize long docs to ≤ 200 words before feeding to LLM. | Auto-summary step using small model or regex trimming.         | Reduces tokens per call     |
+| **e. Cached Top Queries**     | Store top 100 Q&A per domain in memory (Redis or in-process).             | Return cached result instantly for repeats.                    | Sub-second responses        |
+
+  🧭 4️⃣ Domain-Specific Grounding (Top-100 FAQ / Mapping Layer)
+  Goal: give the retriever a “shortcut” to accurate, pre-validated answers for the most frequent user intents — plans, devices, and promotions.
+
+
+    | Sub-task                                   | Description                                                                                               | Implementation idea                                                                                                                                        | Impact                                           |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **a. Build Top-100 QA Dataset per Domain** | Curate ~100 high-traffic questions (≈ 40 Plans, 40 Devices, 20 Promos).                                   | Use historic logs / store manager inputs. Each QA pair stored as JSON:  <br>`{"domain":"plans","question":"What is the Magenta MAX plan?","answer":"..."}` | Instant high-precision recall for common queries |
+| **b. Map to Structured Data**              | Link each question to structured attributes in existing plan/device JSONs.                                | Example: <br>`"plan_id":"12719386138", "features":["unlimited","5G"]`                                                                                      | Enables semantic + symbolic filtering            |
+| **c. Pre-embed and Cache**                 | Generate embeddings for only these 100 QA items and keep them **in-memory (Redis or Usearch hot-index)**. | Cache warm-loaded on startup. TTL = 24 h.                                                                                                                  | < 1 s retrieval for top queries                  |
+| **d. Hybrid Lookup Routing**               | When a new query arrives → run keyword match against this FAQ cache before doing full vector search.      | If match ≥ 0.9, short-circuit to cached answer. Else fallback to RAG.                                                                                      | Avoids full LLM roundtrip for FAQs               |
+| **e. Continuous Expansion**                | Weekly auto-update: extract new frequent questions from conversation logs.                                | Use simple frequency counter → add top 20 new Qs each sprint.                                                                                              | Keeps dataset current without retraining         |
