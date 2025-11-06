@@ -48,3 +48,21 @@ Goal: Retrieve fewer, more precise documents.
 | **c. Pre-embed and Cache**                 | Generate embeddings for only these 100 QA items and keep them **in-memory (Redis or Usearch hot-index)**. | Cache warm-loaded on startup. TTL = 24 h.                                                                                                                  | < 1 s retrieval for top queries                  |
 | **d. Hybrid Lookup Routing**               | When a new query arrives → run keyword match against this FAQ cache before doing full vector search.      | If match ≥ 0.9, short-circuit to cached answer. Else fallback to RAG.                                                                                      | Avoids full LLM roundtrip for FAQs               |
 | **e. Continuous Expansion**                | Weekly auto-update: extract new frequent questions from conversation logs.                                | Use simple frequency counter → add top 20 new Qs each sprint.                                                                                              | Keeps dataset current without retraining         |
+
+
+In the next 4 weeks, by continuing focused improvements across Prompt Optimization, Retrieval Optimization, and Data Refinement, the team will deliver faster, more accurate, and consistent responses without modifying the existing architecture or conversation flow.
+
+Key areas of work include:
+• Data Optimization – cleaning and restructuring plan, device, and promotion data; reducing redundancy; re-embedding for higher precision; and tuning retrieval to surface only the most relevant information.
+• Retrieval Optimization – refining search logic and filters to ensure concise, context-specific responses and reducing token load per call.
+• Prompt Optimization – simplifying system prompts, managing persona context efficiently, and tightening factual guardrails to minimize hallucinations.
+
+These actions will improve:
+
+Response accuracy and factual consistency across all domains
+
+User experience, with more stable and context-aware replies
+
+Operational efficiency, through lower token usage and reduced backend overhead
+
+The expected latency remains around 5–6 seconds, as two LLM calls and one embedding call define the current system limit, but overall responsiveness, clarity, and reliability will significantly improve.
